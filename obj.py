@@ -56,10 +56,12 @@ class ObjImage(Obj, rect_lib.RectDirection):
 class ObjImageMove(ObjImage):
     """class for objects that move"""
 
+
     def __init__(self, pygame, screen, image_file, initial_direction=0):
         super().__init__(pygame, screen, image_file, initial_direction)
         self.collision_buffer_parms = None
         self.collision_buffer = None
+        self.warning_collision_buffer = None
 
     def normalize_angle(self, angle):
         # normalize to default 0 degrees/east
@@ -103,6 +105,7 @@ class ObjImageMove(ObjImage):
 
         def create_collision_buffer(parms):
             buffer_size = 10  # pixels
+            warning_buffer_size = 40
 
             def get_buffer_val(self, parms):
                 if len(parms) == 1:
@@ -111,7 +114,16 @@ class ObjImageMove(ObjImage):
                     return self.gnav(parms[1]) + (parms[0] * buffer_size)
                 else:
                     return parms[1].gnav(parms[2]) + (parms[0] * buffer_size)
-
+                
+            def get_warning_buffer_val(self, parms):
+                if len(parms) == 1:
+                    return parms[0] * warning_buffer_size
+                elif len(parms) == 2:
+                    return self.gnav(parms[1]) + (parms[0] * warning_buffer_size)
+                else:
+                    return parms[1].gnav(parms[2]) + (parms[0] * warning_buffer_size)
+            
+            
             ## create_collision_buffer()
             if parms:
                 left = get_buffer_val(self, parms[0])
@@ -119,6 +131,11 @@ class ObjImageMove(ObjImage):
                 width = get_buffer_val(self, parms[2])
                 height = get_buffer_val(self, parms[3])
                 self.collision_buffer = rect_lib.Rect((left, top, width, height))
+                left = get_warning_buffer_val(self, parms[0])
+                top = get_warning_buffer_val(self, parms[1])  
+                width = get_warning_buffer_val(self, parms[2])
+                height = get_warning_buffer_val(self, parms[3])
+                self.warning_collision_buffer = rect_lib.Rect((left, top, width, height))
 
         ## move()
         heading = instruction['heading']
@@ -187,6 +204,7 @@ class ObjImageMove(ObjImage):
         self.pygame.draw.rect(self.screen, self.COLOR_YELLOW, self.collision_buffer)
         if text:
             self.msg(text)
+        
 
     def draw_outline(self, text):
         self.pygame.draw.rect(self.screen, self.COLOR_RED, self, 1)

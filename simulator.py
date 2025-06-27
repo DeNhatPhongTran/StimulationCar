@@ -31,6 +31,7 @@ def main():
 
     # Car
     car = car_obj.ObjCar(pygame, screen, 'images/vehicle_car_24.png', 0)
+    last_speed = None
 
     running = True
     while running:
@@ -40,6 +41,9 @@ def main():
 
         # Management System
         vms = vms_lib.VehicleManagementSystem(pygame, screen, map)
+
+        #counter
+        counter = 0
 
         # game loop
         driving = True
@@ -56,6 +60,15 @@ def main():
                     driving = False
                     running = False
 
+            if counter % 5 == 0:
+                car.set_speed()
+                if car.speed != last_speed:
+                    print(f"Current speed: {car.speed}")
+                    last_speed = car.speed
+                counter = 1
+            else:
+                counter += 1
+            
             map.update()
             map.draw()
             if vms.update() == 'arrived':

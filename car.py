@@ -10,7 +10,13 @@ class ObjCar(obj_lib.ObjImageMove):
     def __init__(self, pygame, screen, image_file, intial_direction):
         super().__init__(pygame, screen, image_file, intial_direction)
         self.speed_prev = None
+        self.max_speed = 50
+        self.acceleration = 5
+        self.acceleration_max = 20
+        self.acc_brake = 5
+        self.speed = 0
         self.sensors = self.init_sensors()
+
 
     def init_sensors(self):
         sensors = []
@@ -36,6 +42,31 @@ class ObjCar(obj_lib.ObjImageMove):
             if new_process:
                 return new_process
         return None
+
+    def set_speed(self):
+        if self.speed > self.max_speed:
+            self.speed -= self.acceleration
+            if self.speed < self.max_speed:
+                self.speed = self.max_speed
+        elif self.speed < self.max_speed:
+            self.speed += self.acceleration
+            if self.speed > self.max_speed:
+                self.speed = self.max_speed
+
+    
+    def set_max_speed(self, max_speed):
+        self.max_speed = max_speed
+
+    def get_activate_distance(self):
+        return self.speed * 0.5 
+
+    def slow_down(self):
+        self.acceleration = 0
+        self.speed_prev = self.speed
+        if self.speed > 2:
+            self.speed -= self.acc_brake
+            if self.speed < 2:
+                self.speed = 2
 
     def restore_speed(self):
         self.speed = self.speed_prev

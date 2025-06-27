@@ -131,8 +131,15 @@ class Classifier(obj_lib.Obj):
     def process_function(self, data):
         pass
 
-    def send_instruction(self, car, heading, speed, text):
-        car.draw_outline(text)
+    def send_instruction(self, car, heading, speed, text, interval= 1000):
+        if not hasattr(self, 'first_time'):
+            self.first_time = self.pygame.time.get_ticks()
+            car.draw_outline(text)
+
+        now = self.pygame.time.get_ticks()
+        if now - self.first_time > interval:    
+            car.draw_outline(text)
+            self.first_time = self.pygame.time.get_ticks()
         return car.make_instruction(heading, speed)
 
     def reset(self):
@@ -193,11 +200,17 @@ class ClassifierSimulator(Classifier):
         same_lane = feature['same_lane']
         if same_lane is False:
             return False
-        return feature['distance'] <= (self.activate_distance + self.activate_distance_buffer)
+        if 'activate_distance' not in feature:
+            feature['activate_distance'] = status['car'].get_activate_distance()
+        activate_distance = feature['activate_distance']
+        return feature['distance'] <= (activate_distance + self.activate_distance_buffer)
 
     def process_complete(self, feature):
         pass
 
+    def in_warning_collision_buffer(self, car, artifact):
+        return car.warning_collision_buffer and not car.warning_collision_buffer.is_clear([artifact])
+    
     def in_collision_buffer(self, car, artifact):
         return car.collision_buffer and not car.collision_buffer.is_clear([artifact])
 
@@ -229,16 +242,16 @@ class ClassiferSimulatorStationaryDestination(ClassiferSimulatorStationary):
 
 
 class ClassiferSimulatorStationarySignSpeed(ClassiferSimulatorStationary):
-    def __init__(self, pygame, screen, artifact_class, activate_distance, activate_pos, speed):
-        self.speed = speed
+    def __init__(self, pygame, screen, artifact_class, activate_distance, activate_pos, max_speed):
+        self.max_speed = max_speed
         super().__init__(pygame, screen, artifact_class, activate_distance, activate_pos)
 
     def process_function(self, data):
         car = data['status']['car']
 
-        if car.speed != self.speed:
-            car.speed_prev = self.speed  # allow temporary speed changes to be reset
-            return self.send_instruction(car, None, self.speed, f'Setting speed to: {self.speed}')
+        if car.max_speed != self.max_speed:
+            car.max_speed = self.max_speed  # allow temporary speed changes to be reset
+            return self.send_instruction(car, None, self.max_speed, f'Setting max speed to: {self.max_speed}', 1000)
         else:
             feature = data['feature']
             self.process_complete(feature)
@@ -274,18 +287,33 @@ class ClassiferSimulatorStationarySignStop(ClassiferSimulatorStationary):
 
     def get_process_data(self, status, feature):
         data = super().get_process_data(status, feature)
-        wait_time = 3  # seconds
-        data['complete'] = self.pygame.time.get_ticks() + (wait_time * 1000)
         return data
 
     def process_function(self, data):
         car = data['status']['car']
+        feature = data['feature']
+        artifact = feature['artifact']
+        road = data['status']['location']['road']
+
+        pos_artifact = artifact.gnav('top') 
+        pos_car = car.gnav('top')
+        distance = (pos_artifact - pos_car) * road.graph_dir_length
+
         ticks = self.pygame.time.get_ticks()
-        if ticks < data['complete']:
-            return self.send_instruction(car, None, 0, 'Waiting at stop sign')
-        else:
-            car.restore_speed()
-            self.process_complete(data['feature'])
+        if distance > 5:
+            car.slow_down()
+            return self.send_instruction(car, None, car.speed, 'Slowing down for stop sign', 1000)
+        elif distance <= 5:
+            car.speed = 0
+            if 'complete' not in data:
+                wait_time = 3  # seconds
+                data['complete'] = ticks + (wait_time * 1000)
+            if ticks < data['complete']:
+                return self.send_instruction(car, None, car.speed, 'Waiting at stop sign', 1000)
+            else:
+                self.process_complete(data['feature'])
+                car.acceleration = 15
+                car.set_speed()
 
 
 class ClassiferSimulatorStationarySignTrafficLight(ClassiferSimulatorStationary):
@@ -296,11 +324,25 @@ class ClassiferSimulatorStationarySignTrafficLight(ClassiferSimulatorStationary)
         car = data['status']['car']
         feature = data['feature']
         artifact = feature['artifact']
-        if artifact.red:
-            return self.send_instruction(car, None, 0, 'Waiting at red traffic light')
-        else:
-            car.restore_speed()
-            self.process_complete(feature)
+        road = data['status']['location']['road']
+
+        pos_artifact = artifact.gnav('top') 
+        pos_car = car.gnav('top')
+        distance = (pos_artifact - pos_car) * road.graph_dir_length
+
+        ticks = self.pygame.time.get_ticks()
+        if distance > 30:
+            car.slow_down()
+            return self.send_instruction(car, None, car.speed, 'Slowing down for traffic light',1000)
+        elif distance <= 30:
+            car.speed = 0
+            if artifact.red:
+                return self.send_instruction(car, None, 0, 'Waiting at red traffic light',1000)
+            else:
+                car.acceleration = 15
+                car.set_speed()
+                self.process_complete(feature)
+
 
 
 class ClassifierSimulatorMove(ClassifierSimulator):
@@ -352,7 +394,7 @@ class ClassiferSimulatorMoveVehicle(ClassifierSimulatorMove):
 
             target_heading = drive.get_heading(car)
             if target_heading is not None:
-              return self.send_instruction(car, target_heading, car.speed_prev, f'Changing lane to avoid slow moving vehicle')
+              return self.send_instruction(car, target_heading, car.speed, f'Changing lane to avoid slow moving vehicle', 1000)
             else:
                 return self.status_set_inactive(data)
 
@@ -360,17 +402,23 @@ class ClassiferSimulatorMoveVehicle(ClassifierSimulatorMove):
             car = data['status']['car']
             feature = data['feature']
             artifact = feature['artifact']
+            road = data['status']['location']['road']
 
-            distance = abs(artifact.gnav('bottom') - car.gnav('top'))
-            if self.activate_distance > distance:
-                pos_prev = data['artifact_pos']
-                pos_current = artifact.gnav('bottom')
-                speed = (pos_current - pos_prev)  # speed is distance per clock cycle
-                data['artifact_pos'] = pos_current
-                return self.send_instruction(car, artifact.heading, speed, 'Reducing speed for slow vehicle')
-            else:
-                car.restore_speed()
+            pos_artifact = artifact.gnav('top') 
+            pos_car = car.gnav('top')
+            distance = (pos_artifact - pos_car) * road.graph_dir_length
+            
+            if distance > 5:
+                car.slow_down()
+                return self.send_instruction(car, artifact.heading, car.speed, 'Reducing speed for slow vehicle', 1000)
+            elif distance < 0:
+                car.acceleration = 15
+                car.set_speed()
                 return self.status_set_inactive(data)
+            else:
+                car.speed = 0
+                car.acceleration = 0
+                return self.send_instruction(car, None, car.speed, 'Stopped for stopped vehicle', 1000)
 
         ## process_function()
         if data['type'] == 'single_lane':
@@ -384,18 +432,33 @@ class ClassiferSimulatorMovePedestrian(ClassifierSimulatorMove):
         super().__init__(pygame, screen, road_artifact.ObjRoadArtifactMovePedestrian, 18, 'bottom')
 
     def activate(self, status, feature):
+        
         if not super().activate(status, feature):
             return False
         pedestrian = feature['artifact']
         car = status['car']
-        return self.in_collision_buffer(car, pedestrian)
+        return self.in_warning_collision_buffer(car, pedestrian)
 
     def process_function(self, data):
         car = data['status']['car']
         pedestrian = data['feature']['artifact']
-        if self.in_collision_buffer(car, pedestrian):
-            car.draw_collision_buffer()
-            return self.send_instruction(car, None, 0, 'Waiting for pedestrian')
-        else:
-            car.restore_speed()
-            return super().status_set_inactive(data)
+        feature = data['feature']
+        artifact = feature['artifact']
+        road = data['status']['location']['road']
+
+        pos_artifact = artifact.gnav('top') 
+        pos_car = car.gnav('top')
+        distance = (pos_artifact - pos_car) * road.graph_dir_length
+        if distance > 30:
+            car.slow_down()
+            return self.send_instruction(car, None, car.speed, 'Slowing down for pedestrian ahead', 1000) 
+        elif distance <= 30:
+            if self.in_collision_buffer(car, pedestrian):
+                car.speed = 0
+                car.draw_collision_buffer()
+                return self.send_instruction(car, None, 0, 'Waiting for pedestrian', 1000)
+            else:
+                car.acceleration = 15
+                car.set_speed()
+                return super().status_set_inactive(data)
+        
