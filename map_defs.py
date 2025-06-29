@@ -111,10 +111,8 @@ def map7():
     add_road(3, 2.8)
     add_artifact("sign_speed_45", 2, 2, L)
     add_artifact("vehicle", 2, 1, 1)
-    add_artifact("pedestrian", 0, 1, L)
     add_artifact("sign_stop", 0, 0, R)
     add_artifact("vehicle", 1, 2, 0)
-    add_artifact("pedestrian", 2, 1, L)
     add_road(1, .85)
     add_artifact("sign_speed_25", 2, 2, L)
     add_artifact("pedestrian", 0, 1, R)
@@ -130,6 +128,12 @@ def map8():
     add_artifact("sign_speed_65", 2, 2, L)
     add_artifact("sign_stop", 0, 0, R)
     add_road(3, 1)
+    add_artifact("destination", 0, 2, C)
+
+def map9():
+    add_road(3, 3.2)
+    add_artifact("vehicle", 1, 0, 1)
+    add_artifact("vehicle", 1, 0, 0)
     add_artifact("destination", 0, 2, C)
 
 

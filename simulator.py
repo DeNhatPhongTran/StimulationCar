@@ -74,8 +74,9 @@ def main():
             if vms.update() == 'arrived':
                 car.reset()
                 break
+            car.update_warning_collision_buffer()
             car.draw()
-
+            car.draw_centered_square()
             #test.draw()
 
             pygame.display.flip()

@@ -209,7 +209,10 @@ class ClassifierSimulator(Classifier):
         pass
 
     def in_warning_collision_buffer(self, car, artifact):
-        return car.warning_collision_buffer and not car.warning_collision_buffer.is_clear([artifact])
+        if not hasattr(car, 'warning_collision_buffer') or car.warning_collision_buffer is None:
+            return False
+        return car.warning_collision_buffer.collidepoint(artifact.center)
+    
     
     def in_collision_buffer(self, car, artifact):
         return car.collision_buffer and not car.collision_buffer.is_clear([artifact])
@@ -368,13 +371,15 @@ class ClassiferSimulatorMoveVehicle(ClassifierSimulatorMove):
         road = data['status']['location']['road']
         artifact = feature['artifact']
 
+        
+
         if road.lane_cnt == 1:
             # only 1 lane - match speed of car
-            data['type'] = 'single_lane'
+            data['type'] = 'slow_down'
             data['artifact_pos'] = artifact.gnav('bottom')
         else:
             # select adjoining lane
-            data['type'] = 'multiple_lane'
+            data['type'] = 'passing_lane'
             car.set_collision_buffer_parms('top-front')
 
             lane_id_current = status['location']['lane'].lane_id
@@ -382,10 +387,10 @@ class ClassiferSimulatorMoveVehicle(ClassifierSimulatorMove):
                 lane_id_new = lane_id_current - 1
             else:
                 lane_id_new = lane_id_current + 1
-
             # create drive guide
             data['drive'] = drive_lib.DriveArcChangeLane(self.pygame, self.screen, car, road, lane_id_current, lane_id_new)
         return data
+    
 
     def process_function(self, data):
         def change_lane(data):
@@ -399,29 +404,29 @@ class ClassiferSimulatorMoveVehicle(ClassifierSimulatorMove):
                 return self.status_set_inactive(data)
 
         def slow_down(data):
-            car = data['status']['car']
-            feature = data['feature']
-            artifact = feature['artifact']
-            road = data['status']['location']['road']
+                car = data['status']['car']
+                feature = data['feature']
+                artifact = feature['artifact']
+                road = data['status']['location']['road']
 
-            pos_artifact = artifact.gnav('top') 
-            pos_car = car.gnav('top')
-            distance = (pos_artifact - pos_car) * road.graph_dir_length
-            
-            if distance > 5:
-                car.slow_down()
-                return self.send_instruction(car, artifact.heading, car.speed, 'Reducing speed for slow vehicle', 1000)
-            elif distance < 0:
-                car.acceleration = 15
-                car.set_speed()
-                return self.status_set_inactive(data)
-            else:
-                car.speed = 0
-                car.acceleration = 0
-                return self.send_instruction(car, None, car.speed, 'Stopped for stopped vehicle', 1000)
+                pos_artifact = artifact.gnav('top') 
+                pos_car = car.gnav('top')
+                distance = (pos_artifact - pos_car) * road.graph_dir_length
+                
+                if distance > 5:
+                    car.slow_down()
+                    return self.send_instruction(car, artifact.heading, car.speed, 'Reducing speed for slow vehicle', 1000)
+                elif distance < 0:
+                    car.acceleration = 15
+                    car.set_speed()
+                    return self.status_set_inactive(data)
+                else:
+                    car.speed = 0
+                    car.acceleration = 0
+                    return self.send_instruction(car, None, car.speed, 'Stopped for stopped vehicle', 1000)
 
         ## process_function()
-        if data['type'] == 'single_lane':
+        if data['type'] == 'slow_down':
             return slow_down(data)
         else:
             return change_lane(data)
@@ -449,10 +454,10 @@ class ClassiferSimulatorMovePedestrian(ClassifierSimulatorMove):
         pos_artifact = artifact.gnav('top') 
         pos_car = car.gnav('top')
         distance = (pos_artifact - pos_car) * road.graph_dir_length
-        if distance > 30:
+        if distance > 5:
             car.slow_down()
             return self.send_instruction(car, None, car.speed, 'Slowing down for pedestrian ahead', 1000) 
-        elif distance <= 30:
+        elif distance <= 5:
             if self.in_collision_buffer(car, pedestrian):
                 car.speed = 0
                 car.draw_collision_buffer()

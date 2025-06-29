@@ -35,6 +35,9 @@ class ObjCar(obj_lib.ObjImageMove):
         end_y = start_point[1] + -round(length * np.sin(theta))
         self.pygame.draw.lines(self.screen, (0, 255, 0), False, [start_point, (end_x, end_y)], 1)
 
+    def set_delta_time(self, delta_time):
+        self.delta_time = delta_time
+
     def update(self, map):
         status = self.get_status(map)
         for sensor in self.sensors:
@@ -42,23 +45,58 @@ class ObjCar(obj_lib.ObjImageMove):
             if new_process:
                 return new_process
         return None
+    
+    def update_position(self):
+        dx = self.speed * self.delta_time * math.cos(self.heading)
+        dy = -self.speed * self.delta_time * math.sin(self.heading)
+        self.x += dx
+        self.y += dy
 
     def set_speed(self):
         if self.speed > self.max_speed:
-            self.speed -= self.acceleration
+            self.speed -= self.acceleration 
             if self.speed < self.max_speed:
-                self.speed = self.max_speed
+                self.speed = self.max_speed 
         elif self.speed < self.max_speed:
             self.speed += self.acceleration
             if self.speed > self.max_speed:
-                self.speed = self.max_speed
+                self.speed = self.max_speed 
 
     
     def set_max_speed(self, max_speed):
         self.max_speed = max_speed
 
     def get_activate_distance(self):
-        return self.speed * 0.5 
+        v = self.speed
+        v0 = 5
+        a = self.acc_brake
+        distance_meter = abs((v ** 2 - v0 ** 2) / (2 * a))
+        pixel_per_meter = 153 / 1000
+        distance_pixel = distance_meter * pixel_per_meter
+        return int(distance_pixel)
+        
+    def draw_centered_square(self, size = None, color=(0, 0, 255)):
+        if size is None:
+            size = self.get_activate_distance() + 30
+        center = self.gnav('center')
+        rect = self.pygame.Rect(
+            center[0] - size // 2,
+            center[1] - size // 2,
+            size,
+            size
+        )
+        self.pygame.draw.rect(self.screen, color, rect, 2) 
+
+
+    def update_warning_collision_buffer(self):
+        size = int(self.get_activate_distance() + 40)
+        center = self.gnav('center')
+        left = center[0] - size // 2
+        top = center[1] - size // 2
+        self.warning_collision_buffer = self.pygame.Rect(left, top, size, size)
+
+   
+
 
     def slow_down(self):
         self.acceleration = 0
